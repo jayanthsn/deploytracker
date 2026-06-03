@@ -1,14 +1,17 @@
-from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
-from typing import Any
 from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class DeploymentStatus(str, Enum):
     pending = "pending"
     running = "running"
+    inprogress = "inprogress"
     success = "success"
     failed = "failed"
+    cancelled = "cancelled"
     rolled_back = "rolled_back"
 
 
