@@ -1,6 +1,11 @@
 """
 Unit tests for the deployments API.
 Each test gets an isolated SQLite database via the `client` fixture in conftest.py.
+
+Success responses follow the envelope shape:
+  list  → {"status": "success", "data": [...], "count": N}
+  single → {"status": "success", "data": {...}}
+Error responses always carry {"status": "error", "code": ..., "message": ..., ...}.
 """
 
 from httpx import AsyncClient
@@ -17,34 +22,46 @@ class TestListDeployments:
     async def test_empty_list(self, client: AsyncClient):
         r = await client.get("/api/v1/deployments/")
         assert r.status_code == 200
-        assert r.json() == []
+        body = r.json()
+        assert body["status"] == "success"
+        assert body["data"] == []
+        assert body["count"] == 0
 
     async def test_returns_created_deployment(self, client: AsyncClient):
         await client.post("/api/v1/deployments/", json=VALID)
         r = await client.get("/api/v1/deployments/")
         assert r.status_code == 200
-        assert len(r.json()) == 1
+        body = r.json()
+        assert body["status"] == "success"
+        assert body["count"] == 1
+        assert len(body["data"]) == 1
 
     async def test_filter_by_region(self, client: AsyncClient):
         await client.post("/api/v1/deployments/", json={**VALID, "region": "us-east-1"})
         await client.post("/api/v1/deployments/", json={**VALID, "region": "eu-west-1"})
         r = await client.get("/api/v1/deployments/?region=us-east-1")
         assert r.status_code == 200
-        assert all(d["region"] == "us-east-1" for d in r.json())
+        body = r.json()
+        assert body["count"] == 1
+        assert all(d["region"] == "us-east-1" for d in body["data"])
 
     async def test_filter_by_service(self, client: AsyncClient):
         await client.post("/api/v1/deployments/", json={**VALID, "service": "api"})
         await client.post("/api/v1/deployments/", json={**VALID, "service": "worker"})
         r = await client.get("/api/v1/deployments/?service=api")
         assert r.status_code == 200
-        assert all(d["service"] == "api" for d in r.json())
+        body = r.json()
+        assert body["count"] == 1
+        assert all(d["service"] == "api" for d in body["data"])
 
     async def test_filter_by_status(self, client: AsyncClient):
         await client.post("/api/v1/deployments/", json={**VALID, "status": "success"})
         await client.post("/api/v1/deployments/", json={**VALID, "status": "failed"})
         r = await client.get("/api/v1/deployments/?status=success")
         assert r.status_code == 200
-        assert all(d["status"] == "success" for d in r.json())
+        body = r.json()
+        assert body["count"] == 1
+        assert all(d["status"] == "success" for d in body["data"])
 
 
 # ---------------------------------------------------------------------------
@@ -57,28 +74,30 @@ class TestCreateDeploymentValid:
         r = await client.post("/api/v1/deployments/", json=VALID)
         assert r.status_code == 201
         body = r.json()
-        assert body["service"] == VALID["service"]
-        assert body["region"] == VALID["region"]
-        assert body["version"] == VALID["version"]
-        assert body["status"] == "pending"
-        assert "id" in body
-        assert "deployed_at" in body
+        assert body["status"] == "success"
+        data = body["data"]
+        assert data["service"] == VALID["service"]
+        assert data["region"] == VALID["region"]
+        assert data["version"] == VALID["version"]
+        assert data["status"] == "pending"
+        assert "id" in data
+        assert "deployed_at" in data
 
     async def test_region_normalised_to_lowercase(self, client: AsyncClient):
         r = await client.post("/api/v1/deployments/", json={**VALID, "region": "US-EAST-1"})
         assert r.status_code == 201
-        assert r.json()["region"] == "us-east-1"
+        assert r.json()["data"]["region"] == "us-east-1"
 
     async def test_explicit_status(self, client: AsyncClient):
         r = await client.post("/api/v1/deployments/", json={**VALID, "status": "success"})
         assert r.status_code == 201
-        assert r.json()["status"] == "success"
+        assert r.json()["data"]["status"] == "success"
 
     async def test_with_metadata(self, client: AsyncClient):
         meta = {"commit": "abc123", "triggered_by": "ci"}
         r = await client.post("/api/v1/deployments/", json={**VALID, "metadata": meta})
         assert r.status_code == 201
-        assert r.json()["metadata"] == meta
+        assert r.json()["data"]["metadata"] == meta
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +129,6 @@ class TestCreateDeploymentPydanticValidation:
         assert r.status_code == 422
         body = r.json()
         assert body["code"] == "VALIDATION_ERROR"
-        # All three required fields reported missing
         missing = [e["loc"][-1] for e in body["details"]]
         assert "service" in missing
         assert "region" in missing
@@ -169,10 +187,12 @@ class TestCreateDeploymentInvalidData:
 
 class TestGetDeployment:
     async def test_get_existing(self, client: AsyncClient):
-        created = (await client.post("/api/v1/deployments/", json=VALID)).json()
+        created = (await client.post("/api/v1/deployments/", json=VALID)).json()["data"]
         r = await client.get(f"/api/v1/deployments/{created['id']}")
         assert r.status_code == 200
-        assert r.json()["id"] == created["id"]
+        body = r.json()
+        assert body["status"] == "success"
+        assert body["data"]["id"] == created["id"]
 
     async def test_get_not_found_returns_custom_exception(self, client: AsyncClient):
         r = await client.get("/api/v1/deployments/99999")
@@ -197,12 +217,12 @@ class TestGetDeployment:
 
 class TestDeleteDeployment:
     async def test_delete_existing(self, client: AsyncClient):
-        created = (await client.post("/api/v1/deployments/", json=VALID)).json()
+        created = (await client.post("/api/v1/deployments/", json=VALID)).json()["data"]
         r = await client.delete(f"/api/v1/deployments/{created['id']}")
         assert r.status_code == 204
 
     async def test_deleted_record_no_longer_found(self, client: AsyncClient):
-        created = (await client.post("/api/v1/deployments/", json=VALID)).json()
+        created = (await client.post("/api/v1/deployments/", json=VALID)).json()["data"]
         await client.delete(f"/api/v1/deployments/{created['id']}")
         r = await client.get(f"/api/v1/deployments/{created['id']}")
         assert r.status_code == 404

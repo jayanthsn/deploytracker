@@ -30,10 +30,21 @@ Supporting pieces:
 - `app/api/v1/router.py` — single place where all v1 sub-routers are registered onto `v1_router`.
 - `main.py` — FastAPI app, lifespan (table auto-creation), global exception handlers, logging setup.
 
-## Error response shape
+## Response structure (enforced rule — apply to every endpoint)
 
-All errors — including validation and unhandled — return this structure:
+**All API responses must be a JSON object. A bare list or bare value at the root is never allowed.**
 
+Success — single object:
+```json
+{ "status": "success", "data": { ... } }
+```
+
+Success — list:
+```json
+{ "status": "success", "data": [ ... ], "count": 3 }
+```
+
+Error (all errors, including validation and unhandled):
 ```json
 {
   "status": "error",
@@ -43,6 +54,18 @@ All errors — including validation and unhandled — return this structure:
   "details": null
 }
 ```
+
+Use `DataEnvelope[T]` and `ListEnvelope[T]` from `app/schemas/response.py` as the `response_model` on every route. Return plain dicts from views — FastAPI serialises them through the model:
+
+```python
+# list endpoint
+return {"status": "success", "data": items, "count": len(items)}
+
+# single-item endpoint
+return {"status": "success", "data": deployment}
+```
+
+DELETE endpoints that return 204 are exempt (no body).
 
 ## Environment
 
