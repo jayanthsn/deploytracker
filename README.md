@@ -38,7 +38,15 @@ Or with uvicorn directly:
 uv run uvicorn main:app --reload
 ```
 
-API docs are available at `http://localhost:8000/docs`.
+## API Documentation
+
+Once the server is running, interactive docs are available at:
+
+| UI        | URL                               | Description                              |
+|-----------|-----------------------------------|------------------------------------------|
+| Swagger   | `http://localhost:8000/docs`      | Interactive API explorer (Swagger UI)    |
+| ReDoc     | `http://localhost:8000/redoc`     | Alternate read-only reference docs       |
+| OpenAPI   | `http://localhost:8000/openapi.json` | Raw OpenAPI schema (JSON)             |
 
 ## Environment Variables
 

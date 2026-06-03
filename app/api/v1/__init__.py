@@ -1,5 +1,3 @@
-from fastapi import APIRouter
-from app.api.v1.deployments import router as deployments_router
+from app.api.v1.router import v1_router
 
-api_router = APIRouter(prefix="/api/v1")
-api_router.include_router(deployments_router)
+__all__ = ["v1_router"]
