@@ -1,9 +1,20 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+import re
 from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import DeploymentNotFound, InvalidDeploymentData
 from app.models.deployment import Deployment
 from app.schemas.deployment import DeploymentCreate
-from app.core.exceptions import DeploymentNotFound
+
+# Service names must be lowercase alphanumeric with hyphens, no spaces or special chars
+_SERVICE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _validate(payload: DeploymentCreate) -> None:
+    if not _SERVICE_NAME_RE.match(payload.service):
+        raise InvalidDeploymentData("service name must be lowercase alphanumeric with hyphens (e.g. 'my-service')")
 
 
 async def list_deployments(
@@ -24,6 +35,7 @@ async def list_deployments(
 
 
 async def create_deployment(db: AsyncSession, payload: DeploymentCreate) -> Deployment:
+    _validate(payload)
     deployment = Deployment(
         service=payload.service,
         region=payload.region,
